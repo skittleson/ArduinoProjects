@@ -7,7 +7,6 @@
 
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
-#include <timer.h>
 #include <ESP8266mDNS.h>
 
 // https://lastminuteengineers.com/bme280-arduino-tutorial/
@@ -17,84 +16,78 @@
 
 /*
   - Trigger a mqtt message on power state changes
-  - Every minute send an update of state
-
-  Pin Layout
-  https://wiki.wemos.cc/products:d1:d1_mini_lite
-  Pin	Function	ESP-8266 Pin
-  TX	TXD	TXD
-  RX	RXD	RXD
-  A0	Analog input, max 3.3V input	A0
-  D0	IO	GPIO16
-  D1	IO, SCL	GPIO5
-  D2	IO, SDA	GPIO4
-  D3	IO, 10k Pull-up	GPIO0
-  D4	IO, 10k Pull-up, BUILTIN_LED	GPIO2
-  D5	IO, SCK	GPIO14
-  D6	IO, MISO	GPIO12
-  D7	IO, MOSI	GPIO13
-  D8	IO, 10k Pull-down, SS	GPIO15
-  G	Ground	GND
-  5V	5V	-
-  3V3	3.3V	3.3V
-  RST	Reset	RST
+  - Every minute send sensor  stats
 */
 
 const char *mdnsService = "_mqtt";
+#define DELAY_MS 100
 #define MQTT_SERVER_LIMIT 10 // store a max of 10 mqtt servers
 #define SEALEVELPRESSURE_HPA (1013.25)
-IPAddress mqttServers[MQTT_SERVER_LIMIT] = {};
-bool isSwitchPower = true;
-auto timer = timer_create_default(); // create a timer with default settings
 WiFiClient wifiClient;
 PubSubClient client(wifiClient);
 Adafruit_BME680 bme; // I2C
+String discoveredMQTTServers[MQTT_SERVER_LIMIT];
 
 void setup()
 {
   Serial.begin(115200);
   setupBme680();
   setupNetwork();
-  delay(1000);
-  discoverMqttServers();
-
-  // Start main processes
-  timer.every(100, triggerOnPowerState);
-  timer.every(60 * 1000, [](void *) -> bool {
-    publishState();
-    printBme();
-    return true;
-  });
+  discoverMqttServers(discoveredMQTTServers);
 }
 
 void loop()
 {
-  timer.tick();
+  // The wifi doesn't always stick around, so reconnect if not connected.
+  reconnectIfNotConnected();
+
+  // Notified all MQTT servers of power state changes
+  bool power = triggerOnPowerState(discoveredMQTTServers);
+
+  // Publish sensor stats roughly every minute.
+  static int waitInterval;
+  waitInterval = waitInterval + 1;
+
+  // Every minute based on DELAY_MS
+  int publishStateInterval = (1000 / DELAY_MS) * 60;
+  if (waitInterval >= publishStateInterval)
+  {
+    waitInterval = 0;
+    publishState(power, discoveredMQTTServers);
+  }
+  delay(DELAY_MS);
 }
 
-bool triggerOnPowerState(void *)
+bool triggerOnPowerState(String ipAddresses[])
+{
+  // Maintain previous state using static keyword for trigging a publish.
+  static int isSwitchPower;
+  bool power = isPowerOn();
+
+  // Toggle state when power is turned on / off
+  if (power & isSwitchPower == false)
+  {
+    isSwitchPower = true;
+    publishState(power, ipAddresses);
+  }
+  if (!power & isSwitchPower == true)
+  {
+    isSwitchPower = false;
+    publishState(power, ipAddresses);
+  }
+  return power;
+}
+
+bool isPowerOn()
 {
   int sensorValue = analogRead(A0);
 
   // Convert the analog reading (which goes from 0 - 1023) to a voltage (0 - 5V):
   float voltage = sensorValue * (5.0 / 1023.0);
-
-  // Toggle state when power is turned on / off
-  if (voltage > 3 & isSwitchPower == false)
-  {
-    isSwitchPower = true;
-    Serial.println(voltage);
-    publishState();
-  }
-  if (voltage < 1 & isSwitchPower == true)
-  {
-    isSwitchPower = false;
-    Serial.println(voltage);
-    publishState();
-  }
-  return true;
+  return voltage > 3.5;
 }
 
+#pragma region Networking
 void setupNetwork()
 {
   delay(10);
@@ -104,43 +97,59 @@ void setupNetwork()
   Serial.println(WiFi.localIP());
 }
 
-// Find all MQTT servers broadcasting then update for later usage.
-void discoverMqttServers()
+void reconnectIfNotConnected()
 {
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    WiFi.reconnect();
+    delay(500);
+    Serial.print(".");
+  }
+}
 
+String IpAddress2String(const IPAddress &ipAddress)
+{
+  return String(ipAddress[0]) + String(".") +
+         String(ipAddress[1]) + String(".") +
+         String(ipAddress[2]) + String(".") +
+         String(ipAddress[3]);
+}
+#pragma endregion
+
+// Find all MQTT servers broadcasting then ipAddress array
+void discoverMqttServers(String ipAddresses[])
+{
   MDNS.begin(String(ESP.getChipId()).c_str());
   delay(250);
-  int n = MDNS.queryService(mdnsService, "_tcp"); // Send out query for esp tcp services
-  Serial.println("mDNS query done");
-
-  // Empty IPAddress spaces
-  for (int i = 0; i < MQTT_SERVER_LIMIT; i++)
+  int n = 0;
+  while (n < 1)
   {
-    mqttServers[i] = IPAddress();
-  }
-  if (n == 0)
-  {
-    Serial.println("no services found");
-  }
-  else
-  {
-    Serial.print(n);
-    Serial.println(" service(s) found");
-    for (int i = 0; i < n; ++i)
+    // Send out query for esp tcp services
+    n = MDNS.queryService(mdnsService, "_tcp");
+    Serial.println("mDNS query done");
+    if (n == 0)
     {
-      // Print details for each service found
-      Serial.print(i + 1);
-      Serial.print(": ");
-      Serial.print(MDNS.hostname(i));
-      Serial.print(" (");
-      Serial.print(MDNS.IP(i));
-      Serial.print(":");
-      Serial.print(MDNS.port(i));
-      Serial.println(")");
-      if (i < MQTT_SERVER_LIMIT)
-      {
-        mqttServers[i] = MDNS.IP(i);
-      }
+      Serial.println("no services found... query until at least one is found");
+      delay(100);
+    }
+  }
+
+  Serial.print(n);
+  Serial.println(" service(s) found");
+  for (int i = 0; i < n; ++i)
+  {
+    // Print details for each service found
+    Serial.print(i + 1);
+    Serial.print(": ");
+    Serial.print(MDNS.hostname(i));
+    Serial.print(" (");
+    Serial.print(MDNS.IP(i));
+    Serial.print(":");
+    Serial.print(MDNS.port(i));
+    Serial.println(")");
+    if (i < MQTT_SERVER_LIMIT)
+    {
+      ipAddresses[i] = IpAddress2String(MDNS.IP(i));
     }
   }
   Serial.println();
@@ -148,8 +157,9 @@ void discoverMqttServers()
 }
 
 // Publish device stats in JSON format to MQTT servers.
-void publishState()
+void publishState(bool powerState, String ipAddresses[])
 {
+
   // Provision capacity for JSON doc
   const int capacity = JSON_OBJECT_SIZE(8);
   StaticJsonDocument<capacity> doc;
@@ -158,7 +168,7 @@ void publishState()
   // Collect and build stat JSON object
   int uptime = millis();
   doc["id"] = String(ESP.getChipId());
-  doc["switchPower"] = isSwitchPower;
+  doc["switchPower"] = powerState;
   doc["uptime"] = uptime;
   doc["temp"] = bme.readTemperature();
   doc["pressure"] = bme.readPressure() / 100.0F;
@@ -168,20 +178,19 @@ void publishState()
   // Convert JSON object to string
   char jsonOutput[512];
   serializeJson(doc, jsonOutput);
-
-  // Send to all MQTT servers
   for (int i = 0; i < MQTT_SERVER_LIMIT; i++)
   {
-    const char *testIpAddress = mqttServers[i].toString().c_str();
+    const char *testIpAddress = ipAddresses[i].c_str();
     if (IPAddress().fromString(testIpAddress))
     {
-      Serial.println(mqttServers[i]);
+      Serial.println(ipAddresses[i]);
 
       // Publish to all MQTT servers on port 1883 with chip id as identifer
-      client.setServer(mqttServers[i], 1883);
+      client.setServer(ipAddresses[i].c_str(), 1883);
       if (client.connect(String(ESP.getChipId()).c_str()))
       {
         // The topic is `iot`. If many devices are present, use the `id` as a way to filter specfic devices.
+        Serial.println("published message");
         client.publish("iot", jsonOutput);
       }
     }
