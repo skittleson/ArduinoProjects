@@ -27,6 +27,8 @@ WiFiClient wifiClient;
 PubSubClient client(wifiClient);
 Adafruit_BME680 bme; // I2C
 String discoveredMQTTServers[MQTT_SERVER_LIMIT];
+unsigned long uptime;
+unsigned long lastPublishTime;
 
 void setup()
 {
@@ -34,26 +36,27 @@ void setup()
   setupBme680();
   setupNetwork();
   discoverMqttServers(discoveredMQTTServers);
+  uptime = 0;
+
+  // Default this so it triggers on first loop
+  lastPublishTime = 1000 * 70;
 }
 
 void loop()
 {
   // The wifi doesn't always stick around, so reconnect if not connected.
   reconnectIfNotConnected();
+  uptime = millis();
 
   // Notified all MQTT servers of power state changes
   bool power = triggerOnPowerState(discoveredMQTTServers);
 
   // Publish sensor stats roughly every minute.
-  static int waitInterval;
-  waitInterval = waitInterval + 1;
-
-  // Every minute based on DELAY_MS
-  int publishStateInterval = (1000 / DELAY_MS) * 60;
-  if (waitInterval >= publishStateInterval)
+  unsigned long timeDiff = uptime - lastPublishTime;
+  if (timeDiff > 60000)
   {
-    waitInterval = 0;
     publishState(power, discoveredMQTTServers);
+    lastPublishTime = millis();
   }
   delay(DELAY_MS);
 }
@@ -166,7 +169,6 @@ void publishState(bool powerState, String ipAddresses[])
   JsonObject obj = doc.to<JsonObject>();
 
   // Collect and build stat JSON object
-  int uptime = millis();
   doc["id"] = String(ESP.getChipId());
   doc["switchPower"] = powerState;
   doc["uptime"] = uptime;
@@ -192,6 +194,7 @@ void publishState(bool powerState, String ipAddresses[])
         // The topic is `iot`. If many devices are present, use the `id` as a way to filter specfic devices.
         Serial.println("published message");
         client.publish("iot", jsonOutput);
+        client.disconnect();
       }
     }
   }
