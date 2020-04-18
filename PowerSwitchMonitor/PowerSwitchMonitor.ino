@@ -59,35 +59,31 @@ void setup()
   discoverMqttServers();
 
   // Start main processes
-  timer.every(100, triggerOnPowerState);
-  timer.every(60 * 1000, [](void *) -> bool {
+  //timer.every(100, triggerOnPowerState);
+  timer.every(20 * 1000, [](void *) -> bool {
     publishState();
     printBme280();
     return true;
   });
 }
 
-void loop()
-{
+void loop() {
   timer.tick();
 }
 
-bool triggerOnPowerState(void *)
-{
+bool triggerOnPowerState(void *) {
   int sensorValue = analogRead(A0);
 
   // Convert the analog reading (which goes from 0 - 1023) to a voltage (0 - 5V):
   float voltage = sensorValue * (5.0 / 1023.0);
 
   // Toggle state when power is turned on / off
-  if (voltage > 3 & isSwitchPower == false)
-  {
+  if (voltage > 3 & isSwitchPower == false) {
     isSwitchPower = true;
     Serial.println(voltage);
     publishState();
   }
-  if (voltage < 1 & isSwitchPower == true)
-  {
+  if (voltage < 1 & isSwitchPower == true) {
     isSwitchPower = false;
     Serial.println(voltage);
     publishState();
@@ -95,8 +91,7 @@ bool triggerOnPowerState(void *)
   return true;
 }
 
-void setupNetwork()
-{
+void setupNetwork() {
   delay(10);
   WiFiManager wifiManager;
   wifiManager.autoConnect();
@@ -148,8 +143,9 @@ void discoverMqttServers()
 }
 
 // Publish device stats in JSON format to MQTT servers.
-void publishState()
-{
+void publishState() {
+  //triggerOnPowerState();
+  //delay(2000);
   // Provision capacity for JSON doc
   const int capacity = JSON_OBJECT_SIZE(7);
   StaticJsonDocument<capacity> doc;
@@ -169,11 +165,9 @@ void publishState()
   serializeJson(doc, jsonOutput);
 
   // Send to all MQTT servers
-  for (int i = 0; i < MQTT_SERVER_LIMIT; i++)
-  {
+  for (int i = 0; i < MQTT_SERVER_LIMIT; i++) {
     const char *testIpAddress = mqttServers[i].toString().c_str();
-    if (IPAddress().fromString(testIpAddress))
-    {
+    if (IPAddress().fromString(testIpAddress)) {
       Serial.println(mqttServers[i]);
 
       // Publish to all MQTT servers on port 1883 with chip id as identifer
