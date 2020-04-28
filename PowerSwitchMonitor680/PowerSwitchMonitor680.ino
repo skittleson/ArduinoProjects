@@ -1,22 +1,12 @@
-#include <ESP8266WiFi.h> //https://github.com/esp8266/Arduino
-
-//needed for wifi manager library
-#include <DNSServer.h>
-#include <ESP8266WebServer.h>
-#include <WiFiManager.h> //https://github.com/tzapu/WiFiManager
-
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <timer.h>
-#include <ESP8266mDNS.h>
 
 // https://lastminuteengineers.com/bme280-arduino-tutorial/
 // BME680 https://github.com/G6EJD/BME680-Example
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME680.h>
-
-#include <EEPROM.h>
 
 /*
   - Trigger a mqtt message on power state changes
@@ -72,8 +62,12 @@ void setup()
   //discoverMqttServers();
 
   // Start main processes
-  timer.every(500, triggerOnPowerState);
-  timer.every(30 * 1000, [](void *) -> bool {
+  timer.every(10 * 1000, [](void *) -> bool {
+    GetGasReference();
+    return true;
+  });
+  timer.every(250, triggerOnPowerState);
+  timer.every(60 * 1000, [](void *) -> bool {
     publishState();
     return true;
   });
@@ -103,12 +97,12 @@ bool triggerOnPowerState(void *)
   float voltage = sensorValue * (5.0 / 1023.0);
 
   // Toggle state when power is turned on / off
-  if (voltage > 3 & isSwitchPower == false)
+  if (voltage > 4.25 & isSwitchPower == false)
   {
     isSwitchPower = true;
     publishState();
   }
-  if (voltage < 1 & isSwitchPower == true)
+  if (voltage < 4 & isSwitchPower == true)
   {
     isSwitchPower = false;
     publishState();
@@ -127,55 +121,9 @@ void setupNetwork()
   Serial.println(WiFi.status());
 }
 
-// Find all MQTT servers broadcasting then update for later usage.
-/*void discoverMqttServers()
-{
-
-  MDNS.begin(String(ESP.getChipId()).c_str());
-  delay(250);
-  int n = MDNS.queryService(mdnsService, "_tcp"); // Send out query for esp tcp services
-  Serial.println("mDNS query done");
-
-  // Empty IPAddress spaces
-  for (int i = 0; i < MQTT_SERVER_LIMIT; i++)
-  {
-    mqttServers[i] = IPAddress();
-  }
-  if (n == 0)
-  {
-    Serial.println("no services found");
-  }
-  else
-  {
-    Serial.print(n);
-    Serial.println(" service(s) found");
-    for (int i = 0; i < n; ++i)
-    {
-
-      // Print details for each service found
-      Serial.print(i + 1);
-      Serial.print(": ");
-      Serial.print(MDNS.hostname(i));
-      Serial.print(" (");
-      Serial.print(MDNS.IP(i));
-      Serial.print(":");
-      Serial.print(MDNS.port(i));
-      Serial.println(")");
-      if (i < MQTT_SERVER_LIMIT)
-      {
-        mqttServers[i] = MDNS.IP(i);
-      }
-    }
-  }
-  Serial.println();
-  MDNS.end();
-}*/
-
 // Publish device stats in JSON format to MQTT servers.
 void publishState()
 {
-  GetGasReference();
-
   // Provision capacity for JSON doc
   const int capacity = JSON_OBJECT_SIZE(9);
   StaticJsonDocument<capacity> doc;
@@ -188,12 +136,13 @@ void publishState()
   doc["pressure"] = (int)(bme.readPressure() / 100.0F);
   doc["humidity"] = (int)bme.readHumidity();
   doc["gas"] = (int)gas_reference;
-  doc["aiq"] = (int)AIQ();
+  //doc["aiq"] = (int)AIQ();
 
   // Convert JSON object to string
   char buffer[119];
   size_t n = serializeJson(doc, buffer);
   mqttTryToConnect();
+  Serial.println(buffer);
   boolean published = client.publish("iot", buffer, n);
   if (!published)
   {

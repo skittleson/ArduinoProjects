@@ -24,8 +24,6 @@
         "unordered_map": "cpp",
         "vector": "cpp",
         "initializer_list": "cpp",
-        "xlocale": "cpp",
-        "xstring": "cpp",
-        "xutility": "cpp"
+        "set": "cpp"
     }
 }

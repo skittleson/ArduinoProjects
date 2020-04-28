@@ -18,9 +18,7 @@
                 "C:\\Program Files (x86)\\Arduino\\tools\\**",
                 "C:\\Program Files (x86)\\Arduino\\hardware\\tools\\**",
                 "C:\\Program Files (x86)\\Arduino\\hardware\\arduino\\avr\\**",
-                "C:\\Program Files (x86)\\Arduino\\hardware\\tools\\avr\\**",
-                "C:\\Users\\spenc\\AppData\\Local\\Arduino15\\packages\\esp8266\\hardware\\esp8266\\2.4.1\\**",
-                "C:\\Users\\spenc\\AppData\\Local\\Arduino15\\packages\\esp8266\\tools\\**"
+                "C:\\Program Files (x86)\\Arduino\\hardware\\tools\\avr\\**"
             ],
             "forcedInclude": [
                 "C:\\Program Files (x86)\\Arduino\\hardware\\arduino\\avr\\cores\\arduino\\Arduino.h"
@@ -38,6 +36,11 @@
         {
             "name": "Win32",
             "includePath": [
+                "C:\\Program Files (x86)\\Arduino\\libraries\\ESPAsyncTCP\\src",
+                "C:\\Users\\Spencer\\Documents\\Arduino\\tools\\**",
+                "C:\\Users\\Spencer\\Documents\\Arduino\\hardware\\espressif\\esp32\\**",
+                "C:\\Users\\Spencer\\AppData\\Local\\Arduino15\\packages\\esp8266\\tools\\**",
+                "C:\\Users\\Spencer\\AppData\\Local\\Arduino15\\packages\\esp8266\\hardware\\esp8266\\2.6.3\\**",
                 "C:\\Users\\Spencer\\Documents\\Arduino\\libraries\\Adafruit_BME680_Library",
                 "C:\\Users\\Spencer\\Documents\\Arduino\\libraries\\Adafruit_Unified_Sensor",
                 "C:\\Users\\Spencer\\Documents\\Arduino\\libraries\\Adafruit_BME280_Library",
