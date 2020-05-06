@@ -39,7 +39,7 @@ void setup()
 {
   Serial.begin(115200);
   pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, HIGH);
+  digitalWrite(RELAY_PIN, LOW);
   acl.setup(String(ESP.getChipId()).c_str());
   acl.setCallback(callback);
 }
@@ -47,19 +47,24 @@ void setup()
 void loop()
 {
   acl.loop();
-  unsigned long relayDurationLastDiff = millis() - relayDurationLast;
+  relayLoop();
+}
+
+void relayLoop()
+{
+  auto relayDurationLastDiff = millis() - relayDurationLast;
 
   // If relay is currently on and time on (diff of now minus triggered time) is greater than duration requested, turn it off.
   if (relayState && relayDurationLastDiff > relayDuration)
   {
     relayState = false;
-    digitalWrite(RELAY_PIN, HIGH);
+    digitalWrite(RELAY_PIN, LOW);
     Serial.println("Relay off");
   }
   if (!relayState && relayDuration > relayDurationLastDiff)
   {
     relayState = true;
-    digitalWrite(RELAY_PIN, LOW);
+    digitalWrite(RELAY_PIN, HIGH);
     Serial.println("Relay on");
   }
 }
@@ -76,7 +81,7 @@ void callback(char *msg)
     relayDurationLast = millis();
 
     // runaway protection for triggering on a relay longer than needed
-    unsigned long timeout = 30 * (60 * 1000);
+    auto timeout = 30 * (60 * 1000);
     if (relayDuration > timeout)
     {
       relayDuration = timeout;

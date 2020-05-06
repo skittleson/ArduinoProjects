@@ -1,8 +1,11 @@
 {
-    "files.associations": {
-        "xlocale": "cpp",
-        "xstring": "cpp",
-        "xutility": "cpp",
-        "string": "cpp"
-    }
+  "files.associations": {
+    "xlocale": "cpp",
+    "xstring": "cpp",
+    "xutility": "cpp",
+    "string": "cpp",
+    "array": "cpp",
+    "vector": "cpp",
+    "*.tcc": "cpp"
+  }
 }

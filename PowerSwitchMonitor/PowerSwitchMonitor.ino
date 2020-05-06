@@ -41,7 +41,6 @@ void setup()
 {
   Serial.begin(115200);
   setupBme280();
-  acl.enableLedIndicator = true;
   acl.setup(String(ESP.getChipId()).c_str());
   timer.every(250, triggerOnPowerState);
   timer.every(60 * 1000, [](void *) -> bool {
@@ -77,7 +76,9 @@ bool triggerOnPowerState(void *)
   return true;
 }
 
-// Publish device stats in JSON format to MQTT servers.
+/*
+  Publish device stats in JSON format to a MQTT server
+*/
 void publishState()
 {
 
@@ -97,22 +98,6 @@ void publishState()
   char jsonOutput[120];
   serializeJson(doc, jsonOutput);
   acl.publish(jsonOutput);
-
-  // // Send to all MQTT servers
-  // for (int i = 0; i < MQTT_SERVER_LIMIT; i++) {
-  //   const char *testIpAddress = mqttServers[i].toString().c_str();
-  //   if (IPAddress().fromString(testIpAddress)) {
-  //     Serial.println(mqttServers[i]);
-
-  //     // Publish to all MQTT servers on port 1883 with chip id as identifer
-  //     client.setServer(mqttServers[i], 1883);
-  //     if (client.connect(String(ESP.getChipId()).c_str()))
-  //     {
-  //       // The topic is `iot`. If many devices are present, use the `id` as a way to filter specfic devices.
-  //       client.publish("iot", jsonOutput);
-  //     }
-  //   }
-  // }
 }
 
 void setupBme280()

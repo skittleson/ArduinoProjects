@@ -4,7 +4,9 @@
             "name": "Win32",
             "includePath": [
                 "C:\\Users\\Spencer\\AppData\\Local\\Arduino15\\packages\\esp8266\\tools\\**",
-                "C:\\Users\\Spencer\\AppData\\Local\\Arduino15\\packages\\esp8266\\hardware\\esp8266\\2.6.3\\**"
+                "C:\\Users\\Spencer\\AppData\\Local\\Arduino15\\packages\\esp8266\\hardware\\esp8266\\2.6.3\\**",
+                "C:\\\\Program Files (x86)\\\\Arduino\\\\libraries\\\\**",
+                "C:\\\\Users\\\\Spencer\\\\Documents\\\\Arduino\\\\libraries\\\\**"
             ],
             "forcedInclude": [],
             "intelliSenseMode": "msvc-x64",
