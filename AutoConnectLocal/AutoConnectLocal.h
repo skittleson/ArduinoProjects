@@ -27,6 +27,7 @@ private:
   void (*callback)(char *);
   const char *_deviceId;
   void connectWifi();
+  void oTA();
 };
 
 #endif

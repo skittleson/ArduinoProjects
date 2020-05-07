@@ -28,12 +28,15 @@
 
 #include <AutoConnectLocal.h>
 #include <ArduinoJson.h>
+#include <timer.h>
+#include <ArduinoJson.h>
 
 #define RELAY_PIN 14 // D5	IO, SCK	GPIO14
 AutoConnectLocal acl;
 unsigned long relayDuration = 0;
 unsigned long relayDurationLast = 0;
 bool relayState = false;
+auto timer = timer_create_default();
 
 void setup()
 {
@@ -42,14 +45,22 @@ void setup()
   digitalWrite(RELAY_PIN, LOW);
   acl.setup(String(ESP.getChipId()).c_str());
   acl.setCallback(callback);
+  timer.every(10 * 60 * 1000, [](void *) -> bool {
+    publishState();
+    return true;
+  });
 }
 
 void loop()
 {
   acl.loop();
   relayLoop();
+  timer.tick();
 }
 
+/*
+  Turn relay on and off based on requested duration and state flag.
+*/
 void relayLoop()
 {
   auto relayDurationLastDiff = millis() - relayDurationLast;
@@ -60,12 +71,14 @@ void relayLoop()
     relayState = false;
     digitalWrite(RELAY_PIN, LOW);
     Serial.println("Relay off");
+    publishState();
   }
   if (!relayState && relayDuration > relayDurationLastDiff)
   {
     relayState = true;
     digitalWrite(RELAY_PIN, HIGH);
     Serial.println("Relay on");
+    publishState();
   }
 }
 
@@ -89,4 +102,22 @@ void callback(char *msg)
     Serial.print("Running relay for: ");
     Serial.println(relayDuration);
   }
+}
+
+void publishState()
+{
+
+  // Provision capacity for JSON doc
+  const int capacity = JSON_OBJECT_SIZE(3);
+  StaticJsonDocument<capacity> doc;
+  JsonObject obj = doc.to<JsonObject>();
+
+  // Collect and build stat JSON object
+  doc["id"] = String(ESP.getChipId());
+  doc["relay"] = relayState;
+
+  // Convert JSON object to string
+  char jsonOutput[120];
+  serializeJson(doc, jsonOutput);
+  acl.publish(jsonOutput);
 }
