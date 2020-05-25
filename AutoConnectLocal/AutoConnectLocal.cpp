@@ -16,6 +16,7 @@
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 
+// TODO add mini web server for callback
 // TODO add "roam mode" - allow a device to leave the area then re-connect. callback on reconnect to the main app. Be explicit about this feature tho.
 // MAYBE ping/pong on MQTT?
 
@@ -46,7 +47,7 @@ void AutoConnectLocal::setup(const char *deviceId)
   Serial.print("Device Id:");
   Serial.println(this->_deviceId);
   this->connectWifi();
-  AutoConnectLocal::oTA();
+  this->oTA();
   this->mqttTryToConnect();
 }
 
@@ -62,11 +63,14 @@ void AutoConnectLocal::loop()
   //   delay(2000);
   //   ESP.reset();
   // }
-
   this->connectWifi();
+  delay(1);
   ArduinoOTA.handle();
+  delay(1);
   this->mqttTryToConnect();
+  delay(1);
   this->client.loop();
+  delay(1);
 }
 
 /*
@@ -83,7 +87,7 @@ MQTT publish on topic 'iot' with error checking.  No device id is sent. It's rec
 boolean AutoConnectLocal::publish(const char *payload)
 {
   boolean published = client.publish("iot", payload, sizeof(payload));
-  if (!published)
+  if (!published && Serial.available())
   {
     int size = sizeof(payload);
     Serial.println("Failed to send messsage likely due to size. PubSubClient only support 120 characters. A build flag is possible with MQTT_MAX_PACKET_SIZE=256 to increase packet size.");
@@ -98,7 +102,6 @@ void AutoConnectLocal::mqttTryToConnect()
   bool connected = this->client.connected();
   if (!connected)
   {
-    Serial.print("Attempting to connect to MQTT server");
 
     // use a function to set the callback in a class lib
     this->client.setCallback([this](char *topic, byte *payload, unsigned int length) { this->mqttCallbackFunc(topic, payload, length); });
@@ -107,10 +110,8 @@ void AutoConnectLocal::mqttTryToConnect()
     while (!this->client.connected())
     {
       this->client.connect(this->_deviceId);
-      Serial.print(".");
       delay(50);
     }
-    Serial.println("");
     this->client.subscribe(this->_deviceId);
     this->client.publish("registered", this->_deviceId);
   }
@@ -126,16 +127,16 @@ void AutoConnectLocal::mqttCallbackFunc(char *topic, byte *payload, unsigned int
   // If callback defined, then use it
   if (this->callback)
   {
-    callback(msg);
+    this->callback(msg);
   }
 
   // Indicate a message was received
   if (this->enableLedIndicator)
   {
     digitalWrite(LED_BUILTIN, LOW);  // turn the LED on (HIGH is the voltage level)
-    delay(1500);                     // wait for a second
+    delay(1000);                     // wait for a second
     digitalWrite(LED_BUILTIN, HIGH); // turn it off
-    delay(100);
+    delay(500);
   }
 }
 
@@ -145,18 +146,23 @@ IPAddress AutoConnectLocal::mqttDiscovery()
   MDNS.begin(String(this->_deviceId));
   delay(250);
   int servicesFound = 0;
-  Serial.println("Querying for mqtt servers.");
+  if (Serial.available())
+  {
+    Serial.println("Querying for mqtt servers.");
+  }
   while (servicesFound < 1)
   {
     servicesFound = MDNS.queryService("_mqtt", "_tcp"); // Send out query for esp tcp services
-    Serial.print(".");
     delay(500);
   }
-  Serial.print("mDNS query done. Found service(s): ");
-  Serial.println(servicesFound);
-  Serial.println("Host: " + String(MDNS.hostname(0)));
-  Serial.print("IP  : ");
-  Serial.println(MDNS.IP(0));
+  if (Serial.available())
+  {
+    Serial.print("mDNS query done. Found service(s): ");
+    Serial.println(servicesFound);
+    Serial.println("Host: " + String(MDNS.hostname(0)));
+    Serial.print("IP  : ");
+    Serial.println(MDNS.IP(0));
+  }
 
   // Support is only for the first service found
   IPAddress mqttServer = MDNS.IP(0);
@@ -169,13 +175,15 @@ void AutoConnectLocal::connectWifi()
 {
   if (WiFi.status() != WL_CONNECTED)
   {
-
     WiFiManager wiFiManager;
     if (!wiFiManager.autoConnect())
     {
-      Serial.println("Failed to connect to WiFi and hit timeout of WiFi portal");
-      ESP.reset();
+      if (Serial.available())
+      {
+        Serial.println("Failed to connect to WiFi and hit timeout of WiFi portal");
+      }
       delay(5000);
+      ESP.reset();
     }
   }
 }
@@ -212,4 +220,17 @@ void AutoConnectLocal::oTA()
       Serial.println("End Failed");
   });
   ArduinoOTA.begin();
+}
+
+char *AutoConnectLocal::status()
+{
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    return "No WiFi";
+  }
+  if (!this->client.connected())
+  {
+    return "No MQTT SRV";
+  }
+  return "\0";
 }

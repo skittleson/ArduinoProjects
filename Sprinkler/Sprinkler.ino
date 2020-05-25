@@ -1,3 +1,17 @@
+#include <Adafruit_GFX.h>
+#include <Adafruit_SPITFT_Macros.h>
+#include <Adafruit_SPITFT.h>
+#include <gfxfont.h>
+
+#include <Adafruit_SSD1306.h>
+#include <splash.h>
+
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+
+// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
 /*
   Sprinkler.cpp - App to manage a Sprinkler relay and environment data.
   Created by Spencer J Kittleson, April 27, 2020.
@@ -5,6 +19,8 @@
 */
 
 /*
+  Resources: https://randomnerdtutorials.com/guide-for-oled-display-with-arduino/
+
   Pin Layout
   https://wiki.wemos.cc/products:d1:d1_mini_lite
   Pin	Function	ESP-8266 Pin
@@ -37,16 +53,48 @@ unsigned long relayDuration = 0;
 unsigned long relayDurationLast = 0;
 bool relayState = false;
 auto timer = timer_create_default();
+char *screenMessage = "version 1.2.5";
 
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+Adafruit_BME280 bme;
+float temp = 0;
+float humidity = 0;
+float pressure = 0;
 void setup()
 {
   Serial.begin(115200);
+  Serial.println(screenMessage);
   pinMode(RELAY_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, LOW);
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
+  {
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;)
+      ;
+  }
+  displayText("Init WiFi & MQTT");
   acl.setup(String(ESP.getChipId()).c_str());
   acl.setCallback(callback);
-  timer.every(10 * 60 * 1000, [](void *) -> bool {
-    publishState();
+  displayText("BME280 Sensor");
+  setupBme280();
+  delay(10);
+  updateBmeData();
+  timer.every(1 * 1000, dashboard);
+  timer.every(60 * 1000, [](void *) -> bool {
+    // Dont collect bme data when relay is in use.
+    if (!relayState)
+    {
+      updateBmeData();
+    }
+    return true;
+  });
+  timer.every(60 * 1000, [](void *) -> bool {
+    // Dont publish state when relay is in use.
+    if (!relayState)
+    {
+      publishState();
+    }
     return true;
   });
 }
@@ -70,14 +118,12 @@ void relayLoop()
   {
     relayState = false;
     digitalWrite(RELAY_PIN, LOW);
-    Serial.println("Relay off");
     publishState();
   }
   if (!relayState && relayDuration > relayDurationLastDiff)
   {
     relayState = true;
     digitalWrite(RELAY_PIN, HIGH);
-    Serial.println("Relay on");
     publishState();
   }
 }
@@ -86,8 +132,6 @@ void callback(char *msg)
 {
   StaticJsonDocument<200> doc;
   deserializeJson(doc, msg);
-  serializeJson(doc, Serial);
-  Serial.println("");
   if (doc.containsKey("duration"))
   {
     relayDuration = doc["duration"].as<unsigned long>();
@@ -99,8 +143,10 @@ void callback(char *msg)
     {
       relayDuration = timeout;
     }
-    Serial.print("Running relay for: ");
-    Serial.println(relayDuration);
+  }
+  if (doc.containsKey("text"))
+  {
+    screenMessage = strdup(doc["text"]);
   }
 }
 
@@ -108,16 +154,91 @@ void publishState()
 {
 
   // Provision capacity for JSON doc
-  const int capacity = JSON_OBJECT_SIZE(3);
+  const int capacity = JSON_OBJECT_SIZE(7);
   StaticJsonDocument<capacity> doc;
   JsonObject obj = doc.to<JsonObject>();
 
   // Collect and build stat JSON object
   doc["id"] = String(ESP.getChipId());
   doc["relay"] = relayState;
+  doc["temp"] = (int)temp;
+  doc["pressure"] = (int)pressure;
+  doc["humidity"] = (int)humidity;
 
   // Convert JSON object to string
   char jsonOutput[120];
   serializeJson(doc, jsonOutput);
   acl.publish(jsonOutput);
+}
+
+void displayText(String text)
+{
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 16);
+  display.println(text);
+  display.display();
+  delay(1000);
+}
+bool dashboard(void *)
+{
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  String uptimeText = "Up: ";
+  auto uptime = millis() / 1000;
+  if (uptime > (60 * 20))
+  {
+    uptime = uptime / 60;
+  }
+  String fullUptime = uptimeText + uptime;
+  display.print(fullUptime);
+  display.setCursor(SCREEN_WIDTH - 10, 0);
+  char *status = acl.status();
+  if (status[0] == '\0')
+  {
+    display.print("|");
+    display.println(screenMessage);
+  }
+  else
+  {
+    display.print("X");
+    display.println(status);
+  }
+  display.setCursor(0, 16);
+  display.print("Relay:   ");
+  display.print(relayState);
+  display.print("/");
+  display.print(relayDuration / 1000);
+  display.println(" secs");
+  display.print("Humidity:");
+  display.println(humidity);
+  display.print("Temp:    ");
+  display.println(temp);
+  display.print("Pressure:");
+  display.println(pressure);
+  display.print("IP:      ");
+  auto ip = WiFi.localIP();
+  display.println(ip);
+  display.display();
+  return true;
+}
+
+void setupBme280()
+{
+  if (!bme.begin(0x76))
+  {
+    Serial.println("Could not find a valid BME280 sensor, check wiring!");
+    while (1)
+      ;
+  }
+}
+
+void updateBmeData()
+{
+  temp = bme.readTemperature();
+  humidity = bme.readHumidity();
+  pressure = bme.readPressure() / 100.0F;
 }

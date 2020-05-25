@@ -19,6 +19,7 @@ public:
     */
   bool enableLedIndicator;
   void setCallback(void (*callback)(char *));
+  char *status();
 
 private:
   void mqttTryToConnect();
