@@ -77,24 +77,14 @@ void setup()
   acl.setup(String(ESP.getChipId()).c_str());
   acl.setCallback(callback);
   displayText("BME280 Sensor");
-  setupBme280();
-  delay(10);
   updateBmeData();
   timer.every(1 * 1000, dashboard);
   timer.every(60 * 1000, [](void *) -> bool {
-    // Dont collect bme data when relay is in use.
-    if (!relayState)
-    {
-      updateBmeData();
-    }
+    updateBmeData();
     return true;
   });
   timer.every(60 * 1000, [](void *) -> bool {
-    // Dont publish state when relay is in use.
-    if (!relayState)
-    {
-      publishState();
-    }
+    publishState();
     return true;
   });
 }
@@ -181,6 +171,7 @@ void displayText(String text)
   display.display();
   delay(1000);
 }
+
 bool dashboard(void *)
 {
   display.clearDisplay();
@@ -220,8 +211,7 @@ bool dashboard(void *)
   display.print("Pressure:");
   display.println(pressure);
   display.print("IP:      ");
-  auto ip = WiFi.localIP();
-  display.println(ip);
+  display.println(acl.ipAddress);
   display.display();
   return true;
 }
@@ -238,6 +228,7 @@ void setupBme280()
 
 void updateBmeData()
 {
+  setupBme280();
   temp = bme.readTemperature();
   humidity = bme.readHumidity();
   pressure = bme.readPressure() / 100.0F;
