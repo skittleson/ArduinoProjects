@@ -33,6 +33,7 @@ AutoConnectLocal::AutoConnectLocal()
   WiFiClient wifiClient;
   PubSubClient client(wifiClient);
   this->client = client;
+  this->_mqttTriggered = false;
 }
 
 /*
@@ -63,6 +64,7 @@ void AutoConnectLocal::loop()
   //   delay(2000);
   //   ESP.reset();
   // }
+
   this->connectWifi();
   delay(1);
   ArduinoOTA.handle();
@@ -70,6 +72,25 @@ void AutoConnectLocal::loop()
   this->mqttTryToConnect();
   delay(1);
   this->client.loop();
+
+  // triggered
+  if (this->_mqttTriggered)
+  {
+    this->_mqttTriggered = false;
+    // If callback defined, then use it
+    if (this->callback)
+    {
+      this->callback(this->_mqttMsg);
+    }
+    // Indicate a message was received
+    if (this->enableLedIndicator)
+    {
+      digitalWrite(LED_BUILTIN, LOW);  // turn the LED on (HIGH is the voltage level)
+      delay(1000);                     // wait for a second
+      digitalWrite(LED_BUILTIN, HIGH); // turn it off
+      delay(500);
+    }
+  }
   delay(1);
 }
 
@@ -104,9 +125,9 @@ void AutoConnectLocal::mqttTryToConnect()
   {
 
     // use a function to set the callback in a class lib
-    this->client.setCallback([this](char *topic, byte *payload, unsigned int length) { this->mqttCallbackFunc(topic, payload, length); });
     const IPAddress mqttServer = this->mqttDiscovery();
     this->client.setServer(mqttServer, 1883);
+    this->client.setCallback([this](char *topic, byte *payload, unsigned int length) { this->mqttCallbackFunc(topic, payload, length); });
     while (!this->client.connected())
     {
       this->client.connect(this->_deviceId);
@@ -123,21 +144,8 @@ void AutoConnectLocal::mqttCallbackFunc(char *topic, byte *payload, unsigned int
   char msg[length];
   strncpy(msg, (char *)payload, length);
   msg[length] = 0;
-
-  // If callback defined, then use it
-  if (this->callback)
-  {
-    this->callback(msg);
-  }
-
-  // Indicate a message was received
-  if (this->enableLedIndicator)
-  {
-    digitalWrite(LED_BUILTIN, LOW);  // turn the LED on (HIGH is the voltage level)
-    delay(1000);                     // wait for a second
-    digitalWrite(LED_BUILTIN, HIGH); // turn it off
-    delay(500);
-  }
+  this->_mqttMsg = msg;
+  this->_mqttTriggered = true;
 }
 
 /* Find all MQTT servers broadcasting locally but return only the first */
@@ -176,7 +184,7 @@ void AutoConnectLocal::connectWifi()
   if (WiFi.status() != WL_CONNECTED)
   {
     WiFiManager wiFiManager;
-    if (!wiFiManager.autoConnect())
+    if (!wiFiManager.autoConnect(this->_deviceId))
     {
       if (Serial.available())
       {
@@ -185,6 +193,7 @@ void AutoConnectLocal::connectWifi()
       delay(5000);
       ESP.reset();
     }
+    this->ipAddress = WiFi.localIP().toString();
   }
 }
 

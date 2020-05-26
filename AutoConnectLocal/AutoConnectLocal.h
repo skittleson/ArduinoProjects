@@ -20,6 +20,7 @@ public:
   bool enableLedIndicator;
   void setCallback(void (*callback)(char *));
   char *status();
+  String ipAddress;
 
 private:
   void mqttTryToConnect();
@@ -27,6 +28,8 @@ private:
   IPAddress mqttDiscovery();
   void (*callback)(char *);
   const char *_deviceId;
+  bool _mqttTriggered;
+  char *_mqttMsg;
   void connectWifi();
   void oTA();
 };
