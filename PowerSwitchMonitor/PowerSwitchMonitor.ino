@@ -1,4 +1,3 @@
-#include <AutoConnectLocal.h>
 #include <ArduinoJson.h>
 #include <timer.h>
 
@@ -35,13 +34,16 @@
 bool isSwitchPower = true;
 auto timer = timer_create_default(); // create a timer with default settings
 Adafruit_BME280 bme;                 // I2C
-AutoConnectLocal acl;
+const char *deviceId = "esp";
 
 void setup()
 {
   Serial.begin(115200);
   setupBme280();
-  acl.setup(String(ESP.getChipId()).c_str());
+  auto deviceIdStr = String(ESP.getChipId());
+  deviceId = deviceIdStr.c_str();
+  connectWifi(deviceId);
+  mqttTryToConnect(deviceId);
   timer.every(250, triggerOnPowerState);
   timer.every(60 * 1000, [](void *) -> bool {
     publishState();
@@ -51,8 +53,8 @@ void setup()
 
 void loop()
 {
+  connectivityLoop(deviceId);
   timer.tick();
-  acl.loop();
 }
 
 bool triggerOnPowerState(void *)
@@ -97,7 +99,7 @@ void publishState()
   // Convert JSON object to string
   char jsonOutput[120];
   serializeJson(doc, jsonOutput);
-  acl.publish(jsonOutput);
+  publish(jsonOutput);
 }
 
 void setupBme280()
@@ -108,22 +110,8 @@ void setupBme280()
     while (1)
       ;
   }
-  printBme280();
 }
 
-void printBme280()
+void callback(char *msg)
 {
-  Serial.print("Temperature = ");
-  Serial.print(bme.readTemperature());
-  Serial.println("*C");
-  Serial.print("Pressure = ");
-  Serial.print(bme.readPressure() / 100.0F);
-  Serial.println("hPa");
-  Serial.print("Approx. Altitude = ");
-  Serial.print(bme.readAltitude(SEALEVELPRESSURE_HPA));
-  Serial.println("m");
-  Serial.print("Humidity = ");
-  Serial.print(bme.readHumidity());
-  Serial.println("%");
-  Serial.println();
 }

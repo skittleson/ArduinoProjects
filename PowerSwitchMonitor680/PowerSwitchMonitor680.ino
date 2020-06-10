@@ -1,5 +1,4 @@
 #include <ArduinoJson.h>
-#include <PubSubClient.h>
 #include <timer.h>
 
 // https://lastminuteengineers.com/bme280-arduino-tutorial/
@@ -33,13 +32,10 @@
   RST	Reset	RST
 */
 
-const char *mdnsService = "_mqtt";
-#define MQTT_SERVER_LIMIT 10 // store a max of 10 mqtt servers
 #define SEALEVELPRESSURE_HPA (1013.25)
 bool isSwitchPower = true;
 auto timer = timer_create_default(); // create a timer with default settings
-WiFiClient wifiClient;
-PubSubClient client(wifiClient);
+AutoConnectLocal acl;
 Adafruit_BME680 bme; // I2C
 
 float hum_score, gas_score;
@@ -51,15 +47,7 @@ void setup()
 {
   Serial.begin(115200);
   setupBme680();
-  setupNetwork();
-  delay(1000);
-  IPAddress mqttServer = IPAddress(192, 168, 4, 100);
-  client.setServer(mqttServer, 1883);
-  mqttTryToConnect();
-  Serial.print("Sending to ");
-  Serial.print(mqttServer);
-  client.publish("registered", String(ESP.getChipId()).c_str());
-  //discoverMqttServers();
+  acl.setup(String(ESP.getChipId()).c_str());
 
   // Start main processes
   timer.every(10 * 1000, [](void *) -> bool {
@@ -76,17 +64,7 @@ void setup()
 void loop()
 {
   timer.tick();
-  client.loop();
-}
-
-void mqttTryToConnect()
-{
-  while (!client.connected())
-  {
-    client.connect(String(ESP.getChipId()).c_str());
-    Serial.print(".");
-    delay(50);
-  }
+  acl.loop();
 }
 
 bool triggerOnPowerState(void *)
@@ -110,17 +88,6 @@ bool triggerOnPowerState(void *)
   return true;
 }
 
-void setupNetwork()
-{
-  delay(10);
-  WiFiManager wifiManager;
-  wifiManager.autoConnect();
-  delay(10);
-  Serial.println(WiFi.localIP());
-  Serial.print("Wifi Status:");
-  Serial.println(WiFi.status());
-}
-
 // Publish device stats in JSON format to MQTT servers.
 void publishState()
 {
@@ -139,18 +106,9 @@ void publishState()
   //doc["aiq"] = (int)AIQ();
 
   // Convert JSON object to string
-  char buffer[119];
-  size_t n = serializeJson(doc, buffer);
-  mqttTryToConnect();
-  Serial.println(buffer);
-  boolean published = client.publish("iot", buffer, n);
-  if (!published)
-  {
-    Serial.println("Failed to send messsage likely due to size.");
-    Serial.print("Size of msg: ");
-    Serial.println(n);
-    Serial.println(buffer);
-  }
+  char jsonOutput[120];
+  serializeJson(doc, jsonOutput);
+  acl.publish(jsonOutput);
 }
 
 void setupBme680()

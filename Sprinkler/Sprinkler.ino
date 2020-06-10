@@ -6,61 +6,31 @@
 #include <Adafruit_SSD1306.h>
 #include <splash.h>
 
-#define SCREEN_WIDTH 128 // OLED display width, in pixels
-#define SCREEN_HEIGHT 64 // OLED display height, in pixels
-
-// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
-
 /*
   Sprinkler.cpp - App to manage a Sprinkler relay and environment data.
   Created by Spencer J Kittleson, April 27, 2020.
   Released into the public domain.
 */
 
-/*
-  Resources: https://randomnerdtutorials.com/guide-for-oled-display-with-arduino/
-
-  Pin Layout
-  https://wiki.wemos.cc/products:d1:d1_mini_lite
-  Pin	Function	ESP-8266 Pin
-  TX	TXD	TXD
-  RX	RXD	RXD
-  A0	Analog input, max 3.3V input	A0
-  D0	IO	GPIO16
-  D1	IO, SCL	GPIO5
-  D2	IO, SDA	GPIO4
-  D3	IO, 10k Pull-up	GPIO0
-  D4	IO, 10k Pull-up, BUILTIN_LED	GPIO2
-  D5	IO, SCK	GPIO14
-  D6	IO, MISO	GPIO12
-  D7	IO, MOSI	GPIO13
-  D8	IO, 10k Pull-down, SS	GPIO15
-  G	Ground	GND
-  5V	5V	-
-  3V3	3.3V	3.3V
-  RST	Reset	RST
-*/
-
-#include <AutoConnectLocal.h>
-#include <ArduinoJson.h>
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 #include <timer.h>
 #include <ArduinoJson.h>
-
 #define RELAY_PIN 14 // D5	IO, SCK	GPIO14
-AutoConnectLocal acl;
 unsigned long relayDuration = 0;
 unsigned long relayDurationLast = 0;
 bool relayState = false;
 auto timer = timer_create_default();
-char *screenMessage = "version 1.2.5";
-
+char *screenMessage = "version 1.2.7";
+const char *deviceId = "esp";
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 Adafruit_BME280 bme;
 float temp = 0;
 float humidity = 0;
 float pressure = 0;
+
 void setup()
 {
   Serial.begin(115200);
@@ -70,13 +40,16 @@ void setup()
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
   {
     Serial.println(F("SSD1306 allocation failed"));
-    for (;;)
-      ;
+    delay(5000);
+    ESP.reset();
   }
   displayText("Init WiFi & MQTT");
-  acl.setup(String(ESP.getChipId()).c_str());
-  acl.setCallback(callback);
+  auto deviceIdStr = String(ESP.getChipId());
+  deviceId = deviceIdStr.c_str();
+  connectWifi(deviceId);
+  mqttTryToConnect(deviceId);
   displayText("BME280 Sensor");
+  setupBme280();
   updateBmeData();
   timer.every(1 * 1000, dashboard);
   timer.every(60 * 1000, [](void *) -> bool {
@@ -91,9 +64,9 @@ void setup()
 
 void loop()
 {
-  acl.loop();
-  relayLoop();
+  connectivityLoop(deviceId);
   timer.tick();
+  relayLoop();
 }
 
 /*
@@ -137,14 +110,13 @@ void callback(char *msg)
   if (doc.containsKey("text"))
   {
     screenMessage = strdup(doc["text"]);
+    Serial.println(screenMessage);
   }
 }
 
 void publishState()
 {
-
-  // Provision capacity for JSON doc
-  const int capacity = JSON_OBJECT_SIZE(7);
+  const int capacity = JSON_OBJECT_SIZE(7); // Provision capacity for JSON doc
   StaticJsonDocument<capacity> doc;
   JsonObject obj = doc.to<JsonObject>();
 
@@ -158,7 +130,7 @@ void publishState()
   // Convert JSON object to string
   char jsonOutput[120];
   serializeJson(doc, jsonOutput);
-  acl.publish(jsonOutput);
+  publish(jsonOutput);
 }
 
 void displayText(String text)
@@ -187,7 +159,7 @@ bool dashboard(void *)
   String fullUptime = uptimeText + uptime;
   display.print(fullUptime);
   display.setCursor(SCREEN_WIDTH - 10, 0);
-  char *status = acl.status();
+  char *status = getStatus();
   if (status[0] == '\0')
   {
     display.print("|");
@@ -211,7 +183,7 @@ bool dashboard(void *)
   display.print("Pressure:");
   display.println(pressure);
   display.print("IP:      ");
-  display.println(acl.ipAddress);
+  display.println(lastIpAddress());
   display.display();
   return true;
 }
@@ -221,14 +193,13 @@ void setupBme280()
   if (!bme.begin(0x76))
   {
     Serial.println("Could not find a valid BME280 sensor, check wiring!");
-    while (1)
-      ;
+    delay(5000);
+    ESP.reset();
   }
 }
 
 void updateBmeData()
 {
-  setupBme280();
   temp = bme.readTemperature();
   humidity = bme.readHumidity();
   pressure = bme.readPressure() / 100.0F;
